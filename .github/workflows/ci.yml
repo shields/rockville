@@ -34,8 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      # Pushing the container image to GHCR requires write access to packages.
-      packages: write
+      packages: write # required to push the container image to GHCR
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository }}
