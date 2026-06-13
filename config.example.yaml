@@ -1,0 +1,38 @@
+# Example rockville configuration. Copy to config.yaml and edit.
+
+roborock:
+  # The email address of your Roborock account.
+  email: you@example.com
+  # The account password is read from the ROBOROCK_PASSWORD environment variable
+  # (recommended, so it stays out of this file). For local experiments you may
+  # set it here instead:
+  # password: your-password
+  #
+  # Directory where cached credentials (user_data.json) and the device cache
+  # (cache.json) are stored. Must be writable and persistent.
+  persist_path: /persist
+
+mqtt:
+  # Your own MQTT broker. Use mqtts:// for TLS.
+  url: mqtt://mosquitto:1883
+  # Optional broker credentials. The password may instead come from the
+  # MQTT_PASSWORD environment variable.
+  # username: rockville
+  # All topics are published under this prefix.
+  topic_prefix: rockville
+
+# One entry per vacuum. Find the DUID in the Roborock app or via the
+# python-roborock CLI. A static IP (with a DHCP reservation) lets rockville
+# skip the one cloud lookup needed to discover the vacuum's address.
+devices:
+  - name: downstairs
+    duid: "REPLACE_WITH_DEVICE_DUID"
+    ip: 192.168.1.50
+
+# How often, in seconds, to poll each vacuum over the LAN.
+poll_interval: 30
+
+# Optional: serve Prometheus metrics and the live status page.
+metrics:
+  port: 9090
+  bind: 0.0.0.0

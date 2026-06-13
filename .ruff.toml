@@ -1,0 +1,60 @@
+# Copyright © 2026 Michael Shields
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Target Python 3.14+ for maximum modernization
+target-version = "py314"
+
+[lint]
+# https://docs.astral.sh/ruff/rules/
+select = [
+  "ALL",
+]
+
+ignore = [
+  "ANN401",  # typing.Any
+  "C90",     # Cyclomatic complexity
+  "D",       # pydocstyle (disable docstring rules)
+  "PLR09",   # "Too many" branches, arguments, etc.
+  "T201",    # print()
+  "RUF001",  # ambiguous Unicode character in string
+  "RUF002",  # ambiguous Unicode character in docstring
+  "RUF003",  # ambiguous Unicode character in comment
+
+  # Redundant with or conflicting with the Ruff formatter:
+  # https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+  "W191",    # tab-indentation
+  "E111",    # indentation-with-invalid-multiple
+  "E114",    # indentation-with-invalid-multiple-comment
+  "E117",    # over-indented
+  "COM812",  # missing-trailing-comma
+  "COM819",  # prohibited-trailing-comma
+  "Q",       # flake8-quotes
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+  "ANN",     # tests don't need type annotations
+  "EM",      # inline exception messages are fine in tests
+  "S101",    # assert is expected in tests
+  "S105",    # fake passwords/secrets in fixtures
+  "S106",
+  "S107",
+  "SLF001",  # tests may touch private members
+  "PLR2004", # magic values are fine in test assertions
+  "ARG",     # pytest fixtures are often unused by name
+  "INP001",  # the tests directory is intentionally not a package
+  "RUF043",  # plain-text match= patterns are fine in tests
+  "TC",      # runtime imports are fine in tests; no startup cost concern
+  "PT018",   # compound assertions are readable in tests
+]

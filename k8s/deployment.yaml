@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rockville
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rockville
+  template:
+    metadata:
+      labels:
+        app: rockville
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      # hostNetwork lets the pod reach the vacuum directly on the LAN for the
+      # local-preferred connection. ClusterFirstWithHostNet keeps cluster DNS
+      # working so the mqtt:// broker service name still resolves.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # The persist volume holds the cached credentials and device cache;
+        # fsGroup makes it writable by the distroless nonroot uid.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rockville
+          image: ghcr.io/shields/rockville:latest
+          args: ["run"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.yaml
+            - name: PERSIST_PATH
+              value: /persist
+            # kubectl create secret generic rockville-secrets \
+            #   --from-literal=roborock-password=... --from-literal=mqtt-password=...
+            - name: ROBOROCK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rockville-secrets
+                  key: roborock-password
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rockville-secrets
+                  key: mqtt-password
+          ports:
+            - name: metrics
+              containerPort: 9090
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 96Mi
+              cpu: 50m
+            limits:
+              memory: 192Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: persist
+              mountPath: /persist
+      volumes:
+        - name: config
+          configMap:
+            # kubectl create configmap rockville-config --from-file=config.yaml
+            name: rockville-config
+        - name: persist
+          persistentVolumeClaim:
+            claimName: rockville-persist
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rockville-persist
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Mi
