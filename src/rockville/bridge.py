@@ -118,7 +118,6 @@ class Bridge:
         metrics = self._config.metrics
         if metrics is not None and self._status_server is not None:
             await self._status_server.start(metrics.bind or _DEFAULT_BIND, metrics.port)
-            self._status_server.set_ready()
         self._tasks.append(asyncio.create_task(self._mqtt_loop()))
         self._tasks.extend(
             asyncio.create_task(self._poll_loop(device))

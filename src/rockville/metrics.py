@@ -14,9 +14,9 @@
 
 """Prometheus metrics and the HTTP server for metrics and the status page.
 
-The server exposes `/metrics` (Prometheus), `/healthz`, `/readyz`, `/` (the
-status page), and `/events` (Server-Sent Events that push status updates as the
-bridge's state changes).
+The server exposes `/metrics` (Prometheus), `/healthz`, `/` (the status page),
+and `/events` (Server-Sent Events that push status updates as the bridge's
+state changes).
 """
 
 from __future__ import annotations
@@ -153,7 +153,6 @@ class StatusServer:
         self._registry = registry
         self._get_status = get_status
         self._heartbeat_s = _HEARTBEAT_INTERVAL
-        self._ready = False
         self._clients: set[asyncio.Queue[str]] = set()
         self._runner: web.AppRunner | None = None
         self.app = web.Application()
@@ -163,13 +162,8 @@ class StatusServer:
                 web.get("/events", self._events),
                 web.get("/metrics", self._metrics),
                 web.get("/healthz", self._healthz),
-                web.get("/readyz", self._readyz),
             ],
         )
-
-    def set_ready(self) -> None:
-        """Mark the bridge ready so `/readyz` returns 200."""
-        self._ready = True
 
     async def start(self, host: str, port: int) -> None:
         """Start serving the metrics and status endpoints on `host:port`."""
@@ -211,12 +205,6 @@ class StatusServer:
 
     async def _healthz(self, _request: web.Request) -> web.Response:
         return web.Response(text="ok")
-
-    async def _readyz(self, _request: web.Request) -> web.Response:
-        return web.Response(
-            text="ok" if self._ready else "not ready",
-            status=200 if self._ready else 503,
-        )
 
     async def _events(self, request: web.Request) -> web.StreamResponse:
         response = web.StreamResponse(headers=_SSE_HEADERS)

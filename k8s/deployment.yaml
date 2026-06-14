@@ -70,12 +70,6 @@ spec:
               port: metrics
             initialDelaySeconds: 10
             periodSeconds: 30
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: metrics
-            initialDelaySeconds: 5
-            periodSeconds: 10
           resources:
             requests:
               memory: 96Mi

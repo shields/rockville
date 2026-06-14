@@ -21,7 +21,6 @@ from rockville import metrics
 from rockville.status_page import DeviceStatus, StatusData
 
 _OK = 200
-_NOT_READY = 503
 
 
 def status() -> StatusData:
@@ -66,20 +65,14 @@ def test_create_metrics_registers_families():
     assert "rockville_commands" in names
 
 
-async def test_health_ready_index_and_metrics_routes():
+async def test_health_index_and_metrics_routes():
     registry = CollectorRegistry()
     metrics.create_metrics(registry)
     server = metrics.StatusServer(registry, status)
     async with TestClient(TestServer(server.app)) as client:
-        assert (await client.get("/healthz")).status == _OK
-
-        not_ready = await client.get("/readyz")
-        assert not_ready.status == _NOT_READY
-
-        server.set_ready()
-        ready = await client.get("/readyz")
-        assert ready.status == _OK
-        assert await ready.text() == "ok"
+        health = await client.get("/healthz")
+        assert health.status == _OK
+        assert await health.text() == "ok"
 
         index = await client.get("/")
         assert index.status == _OK

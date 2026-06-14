@@ -115,7 +115,7 @@ When `metrics` is configured, rockville serves on that port:
 
 - `/metrics` — Prometheus metrics (`rockville_*`).
 - `/` — a live status page that updates over Server-Sent Events.
-- `/healthz` and `/readyz` — health and readiness checks.
+- `/healthz` — a liveness check.
 
 ## Deployment
 
