@@ -182,6 +182,8 @@ class StatusServer:
 
     def notify(self) -> None:
         """Push the current status to all connected SSE clients."""
+        if not self._clients:
+            return
         content = render_status_content(self._get_status())
         for queue in self._clients:
             queue.put_nowait(content)
