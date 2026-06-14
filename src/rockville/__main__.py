@@ -33,6 +33,7 @@ import click
 from . import auth, log
 from .bridge import Bridge
 from .config import load_config
+from .errors import RockvilleError
 from .roborock_client import DeviceManagerBackend
 
 if TYPE_CHECKING:
@@ -66,6 +67,18 @@ def _configure_logging(env: Mapping[str, str]) -> None:
 
 def _load() -> Config:
     return load_config(os.environ.get(_CONFIG_PATH_ENV, _DEFAULT_CONFIG_PATH))
+
+
+def _load_checked() -> Config:
+    """Load the config, reporting a RockvilleError as a clean CLI message.
+
+    Without this a config typo would dump a full traceback; click.ClickException
+    renders ``Error: <message>`` and exits 1 instead.
+    """
+    try:
+        return _load()
+    except RockvilleError as err:
+        raise click.ClickException(str(err)) from err
 
 
 async def serve(
@@ -105,7 +118,7 @@ def cli(ctx: click.Context) -> None:
 def run() -> None:
     """Run the bridge (the default command)."""
     _configure_logging(os.environ)
-    config = _load()
+    config = _load_checked()
     asyncio.run(serve(config, version=read_version(os.environ, _VERSION_FILE)))
 
 
@@ -113,7 +126,7 @@ def run() -> None:
 def login() -> None:
     """Authenticate with the Roborock cloud via an emailed code."""
     _configure_logging(os.environ)
-    config = _load()
+    config = _load_checked()
     asyncio.run(auth.code_login(config.roborock.email, config.roborock.persist_path))
     click.echo("Saved credentials.")
 

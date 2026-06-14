@@ -21,6 +21,7 @@ from click.testing import CliRunner
 from fakes import make_config
 
 from rockville import __main__ as entry
+from rockville.errors import ConfigError
 
 
 def test_read_version_from_env():
@@ -132,6 +133,20 @@ def test_login_command(monkeypatch):
     result = CliRunner().invoke(entry.cli, ["login"])
     assert result.exit_code == 0
     assert "Saved credentials." in result.output
+
+
+def test_run_reports_config_error_cleanly(monkeypatch):
+    monkeypatch.setattr(entry, "_configure_logging", lambda _env: None)
+
+    def boom():
+        msg = "bad config: missing 'mqtt'"
+        raise ConfigError(msg)
+
+    monkeypatch.setattr(entry, "_load", boom)
+    result = CliRunner().invoke(entry.cli, ["run"])
+    assert result.exit_code == 1
+    assert "bad config: missing 'mqtt'" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_main_invokes_cli(monkeypatch):
