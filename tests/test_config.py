@@ -294,3 +294,15 @@ def test_load_config_reads_file(tmp_path: Path):
     cfg = config.load_config(path, env={})
     assert cfg.devices[0].duid == "duid-1"
     assert cfg.mqtt.port == 1883
+
+
+def test_load_config_missing_file(tmp_path: Path):
+    with pytest.raises(ConfigError, match="cannot read config file"):
+        config.load_config(tmp_path / "absent.yaml", env={})
+
+
+def test_load_config_invalid_yaml(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text("roborock: [unterminated\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="cannot parse config file"):
+        config.load_config(path, env={})

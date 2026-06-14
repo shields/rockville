@@ -95,8 +95,16 @@ class Config:
 
 def load_config(path: str | Path, *, env: Mapping[str, str] | None = None) -> Config:
     """Load and validate the YAML config at `path`."""
-    text = Path(path).read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as err:
+        msg = f"cannot read config file {path}: {err}"
+        raise ConfigError(msg) from err
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as err:
+        msg = f"cannot parse config file {path}: {err}"
+        raise ConfigError(msg) from err
     return validate(data, env=os.environ if env is None else env)
 
 
