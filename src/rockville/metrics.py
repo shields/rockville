@@ -22,6 +22,7 @@ bridge's state changes).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,12 @@ _SSE_HEADERS = {
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
 }
+
+# Idle SSE connections get a comment heartbeat on this interval so a silently
+# dropped client surfaces (its next write fails) within one interval instead of
+# leaking its queue and handler task until the next state change.
+_HEARTBEAT_INTERVAL = 60.0
+_HEARTBEAT = b": ping\n\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +152,7 @@ class StatusServer:
         """Serve `registry` metrics and the status page rendered from `get_status`."""
         self._registry = registry
         self._get_status = get_status
+        self._heartbeat_s = _HEARTBEAT_INTERVAL
         self._ready = False
         self._clients: set[asyncio.Queue[str]] = set()
         self._runner: web.AppRunner | None = None
@@ -215,15 +223,24 @@ class StatusServer:
         await response.prepare(request)
         queue: asyncio.Queue[str] = asyncio.Queue()
         self._clients.add(queue)
+        # A write to a dropped client raises ConnectionError (reset, broken pipe,
+        # aborted); swallow it and let the finally clause reap the queue. A clean
+        # disconnect cancels the handler instead — let that CancelledError
+        # propagate so aiohttp finalizes the request normally.
         try:
-            await response.write(_sse(render_status_content(self._get_status())))
-            while True:
-                content = await queue.get()
-                if content is _CLOSE:
-                    break
-                await response.write(_sse(content))
-        except asyncio.CancelledError, ConnectionResetError:
-            pass
+            with contextlib.suppress(ConnectionError):
+                await response.write(_sse(render_status_content(self._get_status())))
+                while True:
+                    try:
+                        content = await asyncio.wait_for(queue.get(), self._heartbeat_s)
+                    except TimeoutError:
+                        # A write to a silently dropped client raises here, so
+                        # the finally clause reaps it within one heartbeat.
+                        await response.write(_HEARTBEAT)
+                        continue
+                    if content is _CLOSE:
+                        break
+                    await response.write(_sse(content))
         finally:
             self._clients.discard(queue)
         return response

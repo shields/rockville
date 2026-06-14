@@ -107,6 +107,18 @@ async def test_events_streams_initial_and_pushed_updates():
         assert "rockville" in await _read_event(resp)
 
 
+async def test_events_sends_heartbeat_when_idle():
+    server = metrics.StatusServer(CollectorRegistry(), status)
+    server._heartbeat_s = 0.01
+    async with (
+        TestClient(TestServer(server.app)) as client,
+        client.get("/events") as resp,
+    ):
+        await _read_event(resp)  # initial snapshot
+        # No notify(); the next chunk is the idle heartbeat comment.
+        assert ": ping" in await _read_event(resp)
+
+
 async def test_events_ends_when_server_closes():
     server = metrics.StatusServer(CollectorRegistry(), status)
     async with (
