@@ -14,6 +14,7 @@
 
 """Tests for the JSON-backed device cache."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,11 @@ from roborock.data.v1.v1_code_mappings import RoborockStateCode
 from roborock.devices.cache import CacheData, DeviceCacheData
 
 from rockville import cache
+
+
+async def _dir_names(path: Path) -> list[str]:
+    # Listing off the event loop keeps the blocking-path lint rules happy.
+    return await asyncio.to_thread(lambda: sorted(p.name for p in path.iterdir()))
 
 
 def test_default_handles_enum_bytes_and_dataclass():
@@ -56,6 +62,31 @@ async def test_roundtrip_preserves_home_data_and_ip(tmp_path: Path):
     assert loaded.home_data.id == 7
     assert loaded.device_info["duid-1"].network_info is not None
     assert loaded.device_info["duid-1"].network_info.ip == "192.168.1.5"
+
+
+async def test_set_leaves_no_temp_file(tmp_path: Path):
+    path = tmp_path / "cache.json"
+    await cache.JsonCache(path).set(CacheData())
+    assert await _dir_names(tmp_path) == ["cache.json"]
+
+
+async def test_set_failure_preserves_prior_file(tmp_path: Path):
+    path = tmp_path / "cache.json"
+    store = cache.JsonCache(path)
+    data = CacheData()
+    data.home_data = HomeData(id=7, name="home")
+    await store.set(data)
+
+    bad = CacheData()
+    bad.device_info["d"] = object()  # type: ignore[assignment]  # not serializable
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        await store.set(bad)
+
+    # The original file is intact and no temp file is left behind.
+    reloaded = await cache.JsonCache(path).get()
+    assert reloaded.home_data is not None
+    assert reloaded.home_data.id == 7
+    assert await _dir_names(tmp_path) == ["cache.json"]
 
 
 async def test_get_is_cached(tmp_path: Path):

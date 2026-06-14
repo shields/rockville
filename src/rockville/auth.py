@@ -23,8 +23,10 @@ JSON via `UserData.as_dict()` — no pickle.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from roborock.data import UserData
 from roborock.exceptions import RoborockException
@@ -32,9 +34,6 @@ from roborock.web_api import RoborockApiClient
 
 from .errors import AuthError
 from .log import get_logger
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _log = get_logger(__name__)
 
@@ -72,12 +71,27 @@ def load_user_data(persist: Path) -> UserData | None:
 
 
 def store_user_data(persist: Path, user_data: UserData) -> None:
-    """Persist `user_data` as JSON under `persist`."""
+    """Persist `user_data` as owner-only JSON under `persist`.
+
+    The write is atomic (temp file plus rename) so a crash mid-write cannot
+    leave truncated credentials behind, and the file is created with mode 0600
+    so the cloud session secret is not exposed to other users.
+    """
     persist.mkdir(parents=True, exist_ok=True)
-    user_data_path(persist).write_text(
-        json.dumps(user_data.as_dict(), indent=2),
-        encoding="utf-8",
-    )
+    path = user_data_path(persist)
+    # mkstemp creates a unique file with O_EXCL at mode 0600, so another user
+    # cannot pre-create it (symlink/TOCTOU) or read the secret mid-write.
+    fd, tmp_str = tempfile.mkstemp(dir=persist, prefix=f"{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(user_data.as_dict(), fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 async def password_login(

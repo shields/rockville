@@ -14,6 +14,7 @@
 
 """Tests for Roborock authentication and credential persistence."""
 
+import stat
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,38 @@ def test_store_then_load_roundtrip(tmp_path: Path):
     assert loaded is not None
     assert loaded.rriot.u == "u"
     assert loaded.rriot.r.a == "https://api"
+
+
+def test_store_user_data_is_owner_only(tmp_path: Path):
+    auth.store_user_data(tmp_path, sample_user_data())
+    mode = stat.S_IMODE(auth.user_data_path(tmp_path).stat().st_mode)
+    assert mode == 0o600
+
+
+def test_store_user_data_overwrite_keeps_owner_only(tmp_path: Path):
+    # A pre-existing file with loose permissions must be tightened on rewrite.
+    path = auth.user_data_path(tmp_path)
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0o644)
+    auth.store_user_data(tmp_path, sample_user_data())
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert auth.load_user_data(tmp_path) is not None
+
+
+def test_store_user_data_leaves_no_temp_file(tmp_path: Path):
+    auth.store_user_data(tmp_path, sample_user_data())
+    assert [p.name for p in tmp_path.iterdir()] == [auth.USER_DATA_FILE]
+
+
+def test_store_user_data_failure_cleans_up_temp(tmp_path: Path):
+    class Exploding:
+        def as_dict(self) -> dict:
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        auth.store_user_data(tmp_path, Exploding())  # type: ignore[arg-type]
+    # No partial credentials and no leftover temp file remain.
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_load_corrupt_returns_none(tmp_path: Path):

@@ -26,16 +26,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
+import tempfile
 from enum import Enum
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from roborock.data import RoborockBase
 from roborock.devices.cache import Cache, CacheData
 
 from .log import get_logger
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _log = get_logger(__name__)
 
@@ -92,8 +91,22 @@ class JsonCache(Cache):
         return data
 
     def _store(self, value: CacheData) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(value.as_dict(), default=_default, indent=2),
-            encoding="utf-8",
+        # Write atomically (temp file plus rename) so a crash mid-write cannot
+        # leave a truncated cache that would then be discarded on next start.
+        # mkstemp creates the temp with O_EXCL, so a planted symlink with the
+        # predictable name cannot redirect the write to another file.
+        directory = self._path.parent
+        directory.mkdir(parents=True, exist_ok=True)
+        fd, tmp_str = tempfile.mkstemp(
+            dir=directory, prefix=f"{self._path.name}.", suffix=".tmp"
         )
+        tmp = Path(tmp_str)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(value.as_dict(), fh, default=_default, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            tmp.replace(self._path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
