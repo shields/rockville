@@ -24,7 +24,6 @@ incompatible file is discarded and rebuilt from the cloud rather than crashing.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
 import tempfile
@@ -40,13 +39,14 @@ _log = get_logger(__name__)
 
 
 def _default(obj: object) -> object:
-    """Serialize values `json` cannot handle (enums, bytes, nested dataclasses)."""
+    """Serialize values `json` cannot handle (enums and nested dataclasses)."""
     if isinstance(obj, RoborockBase):
         return obj.as_dict()
     if isinstance(obj, Enum):
         return obj.value
-    if isinstance(obj, bytes):
-        return base64.b64encode(obj).decode("ascii")
+    # We deliberately don't serialize bytes: the only bytes field is the
+    # deprecated, never-written home_map_content, and base64-encoding it was
+    # lossy (RoborockBase.from_dict can't decode it back). Fail loudly instead.
     msg = f"Object of type {type(obj).__name__} is not JSON serializable"
     raise TypeError(msg)
 

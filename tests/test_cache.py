@@ -30,15 +30,18 @@ async def _dir_names(path: Path) -> list[str]:
     return await asyncio.to_thread(lambda: sorted(p.name for p in path.iterdir()))
 
 
-def test_default_handles_enum_bytes_and_dataclass():
+def test_default_handles_enum_and_dataclass():
     assert cache._default(RoborockStateCode.idle) == RoborockStateCode.idle.value
-    assert cache._default(b"abc") == "YWJj"
     assert cache._default(NetworkInfo(ip="1.2.3.4"))["ip"] == "1.2.3.4"
 
 
 def test_default_rejects_unsupported():
     with pytest.raises(TypeError, match="not JSON serializable"):
         cache._default(object())
+    # bytes are no longer special-cased; they fail loudly rather than being
+    # written with the old lossy base64 encoding.
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        cache._default(b"abc")
 
 
 async def test_missing_file_returns_empty(tmp_path: Path):
