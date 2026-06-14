@@ -20,6 +20,7 @@ import ssl
 from aiomqtt import MqttError
 from fakes import FakeBackend, FakeHandle, FakeMessage, FakeMQTTClient, make_config
 from roborock.exceptions import RoborockException
+from structlog.testing import capture_logs
 
 from rockville.bridge import Bridge
 from rockville.config import MetricsConfig, MQTTConfig
@@ -317,6 +318,30 @@ async def test_mqtt_loop_clean_stream_end():
     assert client.exited
 
 
+async def test_mqtt_loop_backoff_grows_when_on_connect_fails():
+    # A broker that accepts the socket but rejects _on_connect must keep backing
+    # off; backoff resets only after a fully successful connect, not before.
+    client = FakeMQTTClient()
+    bridge, _ = build_bridge(handle=FakeHandle(), factory=lambda *a, **k: client)
+
+    async def failing_on_connect(_client):
+        msg = "subscribe rejected"
+        raise MqttError(msg)
+
+    bridge._on_connect = failing_on_connect
+    delays: list[float] = []
+
+    async def sleep(delay):
+        delays.append(delay)
+        if len(delays) >= 3:
+            bridge._stopping = True
+        await asyncio.sleep(0)
+
+    bridge._sleep = sleep
+    await bridge._mqtt_loop()
+    assert delays == [1.0, 2.0, 4.0]
+
+
 # --- lifecycle -------------------------------------------------------------
 
 
@@ -351,6 +376,24 @@ async def test_shutdown_without_client():
     bridge, backend = build_bridge(handle=FakeHandle())
     await bridge.shutdown()
     assert backend.closed
+
+
+async def test_shutdown_logs_unexpected_task_error():
+    # A loop that died from a non-cancellation error must not vanish silently.
+    bridge, backend = build_bridge(handle=FakeHandle())
+
+    async def boom():
+        raise ValueError("unexpected")
+
+    task = asyncio.create_task(boom())
+    await asyncio.sleep(0)  # let it run and fail before shutdown gathers it
+    bridge._tasks = [task]
+    with capture_logs() as logs:
+        await bridge.shutdown()
+    assert backend.closed
+    assert any(
+        entry["event"] == "background task exited with an error" for entry in logs
+    )
 
 
 async def test_on_connect_republishes_cached_state():

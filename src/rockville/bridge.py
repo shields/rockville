@@ -135,8 +135,15 @@ class Bridge:
         self._stopping = True
         for task in self._tasks:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        results = await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+        for result in results:
+            # A loop that died from an unexpected (non-cancellation) error would
+            # otherwise vanish silently here; surface it so a supervisor sees it.
+            # CancelledError is a BaseException, not an Exception, so the expected
+            # shutdown cancellations are excluded.
+            if isinstance(result, Exception):
+                _log.error("background task exited with an error", exc_info=result)
         await self._backend.close()
         if self._status_server is not None:
             await self._status_server.close()
@@ -167,9 +174,13 @@ class Bridge:
                     self._client = client
                     self._mqtt_connected = True
                     self._metrics.mqtt_connected.set(1)
-                    backoff = _MIN_BACKOFF
                     try:
                         await self._on_connect(client)
+                        # Reset only after a fully successful connect (subscribe +
+                        # initial publish). A broker that accepts the socket but
+                        # then rejects _on_connect must keep backing off rather
+                        # than retry-storming at the minimum delay.
+                        backoff = _MIN_BACKOFF
                         async for message in client.messages:
                             await self._on_message(message)
                     except asyncio.CancelledError:
