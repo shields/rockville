@@ -85,7 +85,7 @@ command topics are not.
 | `…/cleaning/time_s`            | `845`                               | Time cleaned this run, in seconds.                     |
 | `…/dock`                       | `charging`                          | Synthesized dock state.                                |
 | `…/connection`                 | `local` / `cloud` / `offline`       | How the vacuum is currently reachable.                 |
-| `…/consumable/main_brush`      | `{"percent":83,"hours_left":248.0}` | Remaining life. Also `side_brush`, `filter`, `sensor`. |
+| `…/consumable/main_brush`      | `{"hours_left":248.0,"percent":83}` | Remaining life. Also `side_brush`, `filter`, `sensor`. |
 | `{prefix}/bridge/availability` | `online` / `offline`                | Bridge liveness (the MQTT Last-Will topic).            |
 
 ### Commands (subscribed)
