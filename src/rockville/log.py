@@ -35,6 +35,8 @@ def configure(
 ) -> None:
     """Configure structlog process-wide.
 
+    `level` must be a standard uppercase level name (`DEBUG`, `INFO`, `WARNING`,
+    `ERROR`, `CRITICAL`); a lowercase or unknown name raises `KeyError`.
     `log_format` is `"json"` for machine-readable output or anything else for
     console rendering. `stream` defaults to stderr so logs never pollute a
     command's stdout.
@@ -52,6 +54,10 @@ def configure(
             structlog.processors.format_exc_info,
             renderer,
         ],
+        # `level` must be a canonical uppercase name; we deliberately do not
+        # `.upper()` it. Per the project's fail-fast policy a misconfigured
+        # LOG_LEVEL should crash loudly at startup rather than be silently
+        # coerced. The requirement is documented (README + the docstring above).
         wrapper_class=structlog.make_filtering_bound_logger(
             logging.getLevelNamesMapping()[level],
         ),

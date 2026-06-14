@@ -66,6 +66,13 @@ can be found in the Roborock app or via the `python-roborock` CLI. A static `ip`
 CONFIG_PATH=config.yaml PERSIST_PATH=./persist uv run rockville run
 ```
 
+### Logging
+
+Logs go to stderr. Set `LOG_FORMAT=json` for machine-readable output (anything
+else renders a human-friendly console format). `LOG_LEVEL` sets the threshold
+and must be an **uppercase** standard level name — `DEBUG`, `INFO` (the
+default), `WARNING`, `ERROR`, or `CRITICAL`.
+
 ## MQTT topics
 
 All topics are published under `{topic_prefix}/{device}` (the prefix defaults to
