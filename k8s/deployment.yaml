@@ -34,7 +34,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rockville
-          image: ghcr.io/shields/rockville:latest
+          # CI publishes immutable gitcalver version tags only (no :latest), so
+          # pin a concrete version here, e.g. ghcr.io/shields/rockville:20260613.1.
+          image: ghcr.io/shields/rockville:REPLACE_WITH_VERSION
           args: ["run"]
           securityContext:
             allowPrivilegeEscalation: false
