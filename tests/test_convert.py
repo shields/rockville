@@ -32,19 +32,31 @@ def test_percent_remaining_clamps_when_overused():
     assert convert.percent_remaining(1500, 1000) == 0
 
 
-def test_hours_remaining():
-    assert convert.hours_remaining(0, 3600) == 1.0
-    assert convert.hours_remaining(1800, 3600) == 0.5
-
-
-def test_hours_remaining_clamps():
-    assert convert.hours_remaining(7200, 3600) == 0.0
-
-
 def test_consumable_payload_is_sorted_json():
     payload = convert.consumable_payload(0, 360_000)
-    assert json.loads(payload) == {"percent": 100, "hours_left": 100.0}
-    assert payload == '{"hours_left":100.0,"percent":100}'
+    assert json.loads(payload) == {"life_s": 360_000, "percent": 100, "work_time_s": 0}
+    assert payload == '{"life_s":360000,"percent":100,"work_time_s":0}'
+
+
+def test_consumable_metrics_yields_work_time_and_life():
+    telemetry = Telemetry(
+        main_brush_work_time=180_000,
+        side_brush_work_time=72_000,
+        filter_work_time=54_000,
+        sensor_dirty_time=10_800,
+    )
+    assert list(convert.consumable_metrics(telemetry)) == [
+        ("main_brush", 180_000, 1_080_000),
+        ("side_brush", 72_000, 720_000),
+        ("filter", 54_000, 540_000),
+        ("sensor", 10_800, 108_000),
+    ]
+
+
+def test_consumable_metrics_omits_missing_consumables():
+    telemetry = Telemetry(filter_work_time=0)
+    assert list(convert.consumable_metrics(telemetry)) == [("filter", 0, 540_000)]
+    assert list(convert.consumable_metrics(Telemetry())) == []
 
 
 def test_error_payload_uses_unknown_for_missing_name():
@@ -81,8 +93,9 @@ def test_telemetry_payloads_full():
     assert payloads["cleaning/time_s"] == "845"
     assert payloads["dock"] == "idle"
     assert json.loads(payloads["consumable/main_brush"]) == {
+        "life_s": 1_080_000,
         "percent": 100,
-        "hours_left": 300.0,
+        "work_time_s": 0,
     }
     assert set(payloads) >= {
         "consumable/main_brush",

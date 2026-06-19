@@ -18,7 +18,14 @@ import asyncio
 import ssl
 
 from aiomqtt import MqttError
-from fakes import FakeBackend, FakeHandle, FakeMessage, FakeMQTTClient, make_config
+from fakes import (
+    SAMPLE_TELEMETRY,
+    FakeBackend,
+    FakeHandle,
+    FakeMessage,
+    FakeMQTTClient,
+    make_config,
+)
 from roborock.exceptions import RoborockException
 from structlog.testing import capture_logs
 
@@ -159,6 +166,66 @@ async def test_update_state_without_battery():
     )
 
 
+async def test_update_state_sets_vacuum_metrics():
+    bridge, _ = build_bridge(handle=FakeHandle())
+    await bridge._update_state(device_of(bridge), SAMPLE_TELEMETRY)
+    get = bridge.registry.get_sample_value
+    assert (
+        get(
+            "rockville_consumable_work_time_seconds",
+            {"device": "vac", "consumable": "main_brush"},
+        )
+        == 180_000.0
+    )
+    assert (
+        get(
+            "rockville_consumable_life_seconds",
+            {"device": "vac", "consumable": "main_brush"},
+        )
+        == 1_080_000.0
+    )
+    assert (
+        get(
+            "rockville_consumable_life_seconds",
+            {"device": "vac", "consumable": "sensor"},
+        )
+        == 108_000.0
+    )
+    assert get("rockville_clean_area_square_meters", {"device": "vac"}) == 12.3
+    assert get("rockville_clean_time_seconds", {"device": "vac"}) == 845.0
+    assert get("rockville_error_code", {"device": "vac"}) == 0.0
+    assert get("rockville_state_info", {"device": "vac", "state": "cleaning"}) == 1.0
+    assert (
+        get("rockville_dock_state_info", {"device": "vac", "dock_state": "idle"}) == 1.0
+    )
+
+
+async def test_update_state_skips_unreported_fields():
+    # A freshly discovered device can report battery before state or dock.
+    bridge, _ = build_bridge(handle=FakeHandle())
+    get = bridge.registry.get_sample_value
+    await bridge._update_state(device_of(bridge), Telemetry(battery=50))
+    assert get("rockville_battery_percent", {"device": "vac"}) == 50.0
+    assert get("rockville_state_info", {"device": "vac", "state": "idle"}) is None
+
+
+async def test_update_state_info_keeps_only_the_current_value():
+    bridge, _ = build_bridge(handle=FakeHandle())
+    device = device_of(bridge)
+    get = bridge.registry.get_sample_value
+    await bridge._update_state(device, Telemetry(state="cleaning"))
+    assert get("rockville_state_info", {"device": "vac", "state": "cleaning"}) == 1.0
+
+    # A change removes the stale series, leaving exactly one at 1.
+    await bridge._update_state(device, Telemetry(state="idle"))
+    assert get("rockville_state_info", {"device": "vac", "state": "cleaning"}) is None
+    assert get("rockville_state_info", {"device": "vac", "state": "idle"}) == 1.0
+
+    # An unchanged state re-sets the same series without removing it.
+    await bridge._update_state(device, Telemetry(state="idle"))
+    assert get("rockville_state_info", {"device": "vac", "state": "idle"}) == 1.0
+
+
 async def test_update_connection_local_cloud_offline():
     bridge, backend = build_bridge(handle=FakeHandle(online=True, local=True))
     bridge._client = FakeMQTTClient()
@@ -178,6 +245,25 @@ async def test_update_connection_local_cloud_offline():
     # an identical update produces no change and skips notifying
     await bridge._update_connection(device_of(bridge))
     assert bridge._state["vac"]["connection"] == "offline"
+
+
+async def test_update_connection_offline_clears_state_info():
+    handle = FakeHandle(online=True, local=True)
+    bridge, backend = build_bridge(handle=handle)
+    get = bridge.registry.get_sample_value
+    await bridge._update_state(
+        device_of(bridge), Telemetry(state="cleaning", dock_state="idle")
+    )
+    assert get("rockville_state_info", {"device": "vac", "state": "cleaning"}) == 1.0
+
+    # The device drops offline; its now-stale state/dock series are cleared.
+    backend._handles.clear()
+    await bridge._update_connection(device_of(bridge))
+    assert get("rockville_state_info", {"device": "vac", "state": "cleaning"}) is None
+    assert (
+        get("rockville_dock_state_info", {"device": "vac", "dock_state": "idle"})
+        is None
+    )
 
 
 async def test_update_connection_sets_auth_error_gauge():

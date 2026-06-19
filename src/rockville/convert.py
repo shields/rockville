@@ -31,10 +31,10 @@ from roborock.const import (
 
 from .domain import Command, Telemetry
 
-_SECONDS_PER_HOUR = 3600
 _FULL_PERCENT = 100
 
-# (topic suffix, Telemetry field, replacement budget in seconds).
+# (consumable name, Telemetry field, replacement budget in seconds). The name is
+# both the MQTT topic suffix and the Prometheus `consumable` label value.
 _CONSUMABLES: tuple[tuple[str, str, int], ...] = (
     ("main_brush", "main_brush_work_time", MAIN_BRUSH_REPLACE_TIME),
     ("side_brush", "side_brush_work_time", SIDE_BRUSH_REPLACE_TIME),
@@ -49,20 +49,35 @@ def percent_remaining(work_time: int, replace_time: int) -> int:
     return max(0, min(_FULL_PERCENT, round(remaining)))
 
 
-def hours_remaining(work_time: int, replace_time: int) -> float:
-    """Return the hours of consumable life remaining, clamped at 0 and rounded."""
-    remaining = max(0, replace_time - work_time)
-    return round(remaining / _SECONDS_PER_HOUR, 1)
-
-
 def consumable_payload(work_time: int, replace_time: int) -> str:
-    """Render a consumable's remaining life as a JSON payload."""
+    """Render a consumable's life as a JSON payload.
+
+    Carries the two base-unit facts — cumulative usage and the rated lifetime,
+    both in seconds — plus `percent` remaining as a human-friendly headline.
+    Everything else (hours/seconds left, fraction) derives from the two facts.
+    """
     return _json(
         {
+            "life_s": replace_time,
             "percent": percent_remaining(work_time, replace_time),
-            "hours_left": hours_remaining(work_time, replace_time),
+            "work_time_s": work_time,
         },
     )
+
+
+def consumable_metrics(telemetry: Telemetry) -> list[tuple[str, int, int]]:
+    """Return ``(name, work_time_seconds, life_seconds)`` per reported consumable.
+
+    Mirrors `telemetry_payloads`: only consumables the device actually reported
+    are included, so the bridge never sets a metric for missing data. Remaining
+    life and percent are left to be derived from these two base-unit facts.
+    """
+    metrics: list[tuple[str, int, int]] = []
+    for name, field_name, budget in _CONSUMABLES:
+        work_time = getattr(telemetry, field_name)
+        if work_time is not None:
+            metrics.append((name, work_time, budget))
+    return metrics
 
 
 def error_payload(code: int, name: str | None) -> str:
@@ -96,10 +111,8 @@ def telemetry_payloads(telemetry: Telemetry) -> dict[str, str]:
         payloads["cleaning/time_s"] = str(telemetry.clean_time_s)
     if telemetry.dock_state is not None:
         payloads["dock"] = telemetry.dock_state
-    for suffix, field_name, budget in _CONSUMABLES:
-        work_time = getattr(telemetry, field_name)
-        if work_time is not None:
-            payloads[f"consumable/{suffix}"] = consumable_payload(work_time, budget)
+    for name, work_time, life in consumable_metrics(telemetry):
+        payloads[f"consumable/{name}"] = consumable_payload(work_time, life)
     return payloads
 
 

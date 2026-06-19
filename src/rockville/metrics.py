@@ -73,6 +73,13 @@ class Metrics:
     commands: Counter
     auth_error: Gauge
     battery: Gauge
+    consumable_work_time: Gauge
+    consumable_life: Gauge
+    clean_area: Gauge
+    clean_time: Gauge
+    error_code: Gauge
+    state_info: Gauge
+    dock_state_info: Gauge
 
 
 def create_metrics(registry: CollectorRegistry) -> Metrics:
@@ -136,6 +143,48 @@ def create_metrics(registry: CollectorRegistry) -> Metrics:
             "rockville_battery_percent",
             "Last reported battery percentage, by device.",
             ["device"],
+            registry=registry,
+        ),
+        consumable_work_time=Gauge(
+            "rockville_consumable_work_time_seconds",
+            "Cumulative work time of each consumable since its last reset, by device.",
+            ["device", "consumable"],
+            registry=registry,
+        ),
+        consumable_life=Gauge(
+            "rockville_consumable_life_seconds",
+            "Rated replacement lifetime (the budget) of each consumable, by device.",
+            ["device", "consumable"],
+            registry=registry,
+        ),
+        clean_area=Gauge(
+            "rockville_clean_area_square_meters",
+            "Area cleaned on the current or most recent run, by device.",
+            ["device"],
+            registry=registry,
+        ),
+        clean_time=Gauge(
+            "rockville_clean_time_seconds",
+            "Time spent cleaning on the current or most recent run, by device.",
+            ["device"],
+            registry=registry,
+        ),
+        error_code=Gauge(
+            "rockville_error_code",
+            "Last reported error code, where 0 is no error, by device.",
+            ["device"],
+            registry=registry,
+        ),
+        state_info=Gauge(
+            "rockville_state_info",
+            "Current vacuum state as a label; the value is always 1, by device.",
+            ["device", "state"],
+            registry=registry,
+        ),
+        dock_state_info=Gauge(
+            "rockville_dock_state_info",
+            "Current dock state as a label; the value is always 1, by device.",
+            ["device", "dock_state"],
             registry=registry,
         ),
     )

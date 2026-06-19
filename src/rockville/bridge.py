@@ -44,6 +44,8 @@ from .status_page import DeviceStatus, StatusData
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
+    from prometheus_client import Gauge
+
     from .config import Config, DeviceConfig
     from .domain import Telemetry
     from .roborock_client import Backend, VacuumHandle
@@ -90,6 +92,10 @@ class Bridge:
             StatusServer(self._registry, self._status) if config.metrics else None
         )
         self._state: dict[str, dict[str, str]] = {d.name: {} for d in config.devices}
+        # The current label value of each single-series _info gauge, per device,
+        # so a change can remove the stale series (see _set_current).
+        self._last_state: dict[str, str] = {}
+        self._last_dock: dict[str, str] = {}
         self._client: aiomqtt.Client | None = None
         self._mqtt_connected = False
         self._stopping = False
@@ -291,10 +297,68 @@ class Bridge:
         changed = False
         for suffix, value in convert.telemetry_payloads(telemetry).items():
             changed = await self._set(device.name, suffix, value) or changed
-        if telemetry.battery is not None:
-            self._metrics.battery.labels(device=device.name).set(telemetry.battery)
+        self._update_metrics(device.name, telemetry)
         if changed:
             self._notify()
+
+    def _update_metrics(self, name: str, telemetry: Telemetry) -> None:
+        """Mirror a telemetry snapshot into the device's Prometheus gauges.
+
+        Only fields the device reported are set, matching the change-only MQTT
+        publishing, so a gauge is never set from missing data.
+        """
+        if telemetry.battery is not None:
+            self._metrics.battery.labels(device=name).set(telemetry.battery)
+        for consumable, work_time, life in convert.consumable_metrics(telemetry):
+            self._metrics.consumable_work_time.labels(
+                device=name, consumable=consumable
+            ).set(work_time)
+            self._metrics.consumable_life.labels(
+                device=name, consumable=consumable
+            ).set(life)
+        if telemetry.clean_area_m2 is not None:
+            self._metrics.clean_area.labels(device=name).set(telemetry.clean_area_m2)
+        if telemetry.clean_time_s is not None:
+            self._metrics.clean_time.labels(device=name).set(telemetry.clean_time_s)
+        if telemetry.error_code is not None:
+            self._metrics.error_code.labels(device=name).set(telemetry.error_code)
+        if telemetry.state is not None:
+            self._set_current(
+                self._metrics.state_info, self._last_state, name, telemetry.state
+            )
+        if telemetry.dock_state is not None:
+            self._set_current(
+                self._metrics.dock_state_info,
+                self._last_dock,
+                name,
+                telemetry.dock_state,
+            )
+
+    @staticmethod
+    def _set_current(gauge: Gauge, last: dict[str, str], name: str, value: str) -> None:
+        """Point an `_info` gauge at `value`, dropping the device's prior series.
+
+        These gauges encode a categorical value as a label set to 1. Removing
+        the previous label series keeps exactly one series per device, so a stat
+        panel reducing to last-not-null is unambiguous.
+        """
+        previous = last.get(name)
+        if previous is not None and previous != value:
+            gauge.remove(name, previous)
+        gauge.labels(name, value).set(1)
+        last[name] = value
+
+    @staticmethod
+    def _clear_current(gauge: Gauge, last: dict[str, str], name: str) -> None:
+        """Drop a device's `_info` series — used when it goes offline.
+
+        `_set_current` only removes the stale series when a poll succeeds with a
+        changed value; once a device disconnects, polling stops, so without this
+        the gauge would report the last-seen state (e.g. cleaning) indefinitely.
+        """
+        previous = last.pop(name, None)
+        if previous is not None:
+            gauge.remove(name, previous)
 
     async def _update_connection(self, device: DeviceConfig) -> None:
         handle = self._backend.handle(device.duid)
@@ -305,6 +369,13 @@ class Bridge:
         )
         self._metrics.roborock_local.labels(device=device.name).set(1 if local else 0)
         self._metrics.auth_error.set(0 if self._backend.authenticated else 1)
+        # An offline device has no current state; clear the info gauges so they
+        # don't report a stale state/dock long after the vacuum disconnected.
+        if not online:
+            self._clear_current(self._metrics.state_info, self._last_state, device.name)
+            self._clear_current(
+                self._metrics.dock_state_info, self._last_dock, device.name
+            )
         connection = "local" if local else "cloud" if online else "offline"
         changed = await self._set(device.name, "connection", connection)
         changed = (

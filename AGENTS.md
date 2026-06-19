@@ -42,8 +42,7 @@ behind injected seams, so the bridge is tested without the library or a broker.
 - `config.py` — YAML load + strict, message-rich validation; frozen dataclasses.
 - `domain.py` — `Command` (StrEnum) and `Telemetry` (the flat device snapshot).
 - `convert.py` — **pure** functions: `Telemetry` → MQTT payloads, consumable
-  percent/hours math (budgets imported from `roborock.const`),
-  `command_from_mqtt`.
+  percent math (budgets imported from `roborock.const`), `command_from_mqtt`.
 - `cache.py` — `JsonCache`, a JSON-backed implementation of python-roborock's
   `Cache` protocol.
 - `auth.py` — `pass_login` (unattended) + `code_login` (interactive); JSON

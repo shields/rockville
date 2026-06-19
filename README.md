@@ -105,19 +105,19 @@ command topics are not.
 
 ### State (published)
 
-| Topic                          | Example payload                     | Notes                                                  |
-| ------------------------------ | ----------------------------------- | ------------------------------------------------------ |
-| `…/availability`               | `online` / `offline`                | Per-device reachability.                               |
-| `…/state`                      | `cleaning`                          | The vacuum's state name (e.g. `idle`, `charging`).     |
-| `…/battery`                    | `80`                                | Battery percentage.                                    |
-| `…/fan_speed`                  | `balanced`                          | Current fan-speed name.                                |
-| `…/error`                      | `{"code":0,"name":"none"}`          | Decoded error code.                                    |
-| `…/cleaning/area_m2`           | `12.3`                              | Area cleaned this run, in m².                          |
-| `…/cleaning/time_s`            | `845`                               | Time cleaned this run, in seconds.                     |
-| `…/dock`                       | `charging`                          | Synthesized dock state.                                |
-| `…/connection`                 | `local` / `cloud` / `offline`       | How the vacuum is currently reachable.                 |
-| `…/consumable/main_brush`      | `{"hours_left":248.0,"percent":83}` | Remaining life. Also `side_brush`, `filter`, `sensor`. |
-| `{prefix}/bridge/availability` | `online` / `offline`                | Bridge liveness (the MQTT Last-Will topic).            |
+| Topic                          | Example payload                                        | Notes                                                                                           |
+| ------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `…/availability`               | `online` / `offline`                                   | Per-device reachability.                                                                        |
+| `…/state`                      | `cleaning`                                             | The vacuum's state name (e.g. `idle`, `charging`).                                              |
+| `…/battery`                    | `80`                                                   | Battery percentage.                                                                             |
+| `…/fan_speed`                  | `balanced`                                             | Current fan-speed name.                                                                         |
+| `…/error`                      | `{"code":0,"name":"none"}`                             | Decoded error code.                                                                             |
+| `…/cleaning/area_m2`           | `12.3`                                                 | Area cleaned this run, in m².                                                                   |
+| `…/cleaning/time_s`            | `845`                                                  | Time cleaned this run, in seconds.                                                              |
+| `…/dock`                       | `charging`                                             | Synthesized dock state.                                                                         |
+| `…/connection`                 | `local` / `cloud` / `offline`                          | How the vacuum is currently reachable.                                                          |
+| `…/consumable/main_brush`      | `{"life_s":1080000,"percent":83,"work_time_s":183600}` | Usage, rated life (both seconds), and remaining percent. Also `side_brush`, `filter`, `sensor`. |
+| `{prefix}/bridge/availability` | `online` / `offline`                                   | Bridge liveness (the MQTT Last-Will topic).                                                     |
 
 ### Commands (subscribed)
 
@@ -140,6 +140,24 @@ When `metrics` is configured, rockville serves on that port:
 - `/metrics` — Prometheus metrics (`rockville_*`).
 - `/` — a live status page that updates over Server-Sent Events.
 - `/healthz` — a liveness check.
+
+Alongside the operational metrics (MQTT/Roborock connectivity, message and poll
+counters, `rockville_auth_error`), each poll mirrors the device telemetry into
+gauges so it can be graphed and alerted on:
+
+| Metric                                   | Labels                 | Meaning                                                                                                    |
+| ---------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `rockville_battery_percent`              | `device`               | Battery percentage.                                                                                        |
+| `rockville_consumable_work_time_seconds` | `device`, `consumable` | Cumulative work time of `main_brush`, `side_brush`, `filter`, `sensor` since the last reset.               |
+| `rockville_consumable_life_seconds`      | `device`, `consumable` | Rated replacement lifetime (the budget). Remaining percent = `clamp_min((1 - work_time / life) * 100, 0)`. |
+| `rockville_clean_area_square_meters`     | `device`               | Area cleaned on the current or most recent run.                                                            |
+| `rockville_clean_time_seconds`           | `device`               | Time spent cleaning on the current or most recent run.                                                     |
+| `rockville_error_code`                   | `device`               | Last reported error code (0 is no error).                                                                  |
+| `rockville_state_info`                   | `device`, `state`      | Current vacuum state (the value is always 1).                                                              |
+| `rockville_dock_state_info`              | `device`, `dock_state` | Current dock state (the value is always 1).                                                                |
+
+The `_info` gauges encode a categorical value as a label; rockville drops a
+device's previous series on change, so exactly one is present at a time.
 
 ## Deployment
 
