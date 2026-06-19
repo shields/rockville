@@ -56,9 +56,23 @@ uv run rockville login
 
 ### Configure
 
-Copy `config.example.yaml` to `config.yaml` and edit it. The DUID of each vacuum
-can be found in the Roborock app or via the `python-roborock` CLI. A static `ip`
-(with a DHCP reservation) lets rockville skip the cloud address lookup.
+Copy `config.example.yaml` to `config.yaml` and edit it. A static `ip` (with a
+DHCP reservation) lets rockville skip the cloud address lookup.
+
+Each vacuum is identified by its DUID. Find it in the Roborock app, or list
+every device on the account with the `roborock` CLI bundled with
+`python-roborock`:
+
+```sh
+# One-time login; omit --password to be prompted for an emailed code instead.
+uv run --with pyshark,pyyaml roborock login --email you@example.com --password "$ROBOROCK_PASSWORD"
+
+# Print a {name: duid} map of every device on the account.
+uv run --with pyshark,pyyaml roborock list-devices
+```
+
+The `--with pyshark,pyyaml` is required until `python-roborock`
+[PR#853](https://github.com/Python-roborock/python-roborock/pull/853) is merged.
 
 ### Run
 
