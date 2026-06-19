@@ -47,6 +47,16 @@ environment and rockville logs in on startup:
 export ROBOROCK_PASSWORD='your-password'
 ```
 
+The first successful login is cached to the persist directory, so later starts
+reuse the saved session instead of logging in again. If a login fails (for
+example, Roborock's rate limit after too many attempts), the bridge stays up and
+retries with exponential backoff rather than exiting — so a restart loop can't
+keep hammering the login endpoint. A write failure to the persist directory
+(read-only or full volume) is logged but is non-fatal too: the bridge keeps
+running on the in-memory session rather than crashing into that same loop. Keep
+the persist directory on durable, writable storage so the cached session
+survives restarts.
+
 If password login is unavailable for your account, use the interactive
 email-code fallback once to cache credentials:
 

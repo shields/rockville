@@ -92,6 +92,23 @@ async def test_set_failure_preserves_prior_file(tmp_path: Path):
     assert await _dir_names(tmp_path) == ["cache.json"]
 
 
+async def test_set_tolerates_write_failure(tmp_path: Path, monkeypatch):
+    # A read-only or full persist volume makes the disk write fail with OSError.
+    # set() must log and swallow it (the cache is a rebuildable optimization),
+    # keep the value in memory, and leave nothing on disk.
+    def boom(*_args, **_kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(cache.tempfile, "mkstemp", boom)
+    store = cache.JsonCache(tmp_path / "cache.json")
+    data = CacheData()
+    data.home_data = HomeData(id=7, name="home")
+    await store.set(data)  # must not raise
+
+    assert (await store.get()).home_data.id == 7  # in-memory value retained
+    assert not (tmp_path / "cache.json").exists()  # nothing persisted
+
+
 async def test_get_is_cached(tmp_path: Path):
     store = cache.JsonCache(tmp_path / "cache.json")
     first = await store.get()

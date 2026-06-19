@@ -19,9 +19,9 @@ import contextlib
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 from fakes import make_config
 from roborock.data import Reference, RRiot, UserData
+from roborock.exceptions import RoborockException
 from roborock.roborock_typing import RoborockCommand
 
 from rockville import auth, roborock_client
@@ -207,12 +207,59 @@ async def test_start_with_password_login(monkeypatch, tmp_path: Path):
     assert calls == [("me@example.com", "secret", tmp_path)]
 
 
-async def test_start_without_credentials_raises(monkeypatch, tmp_path: Path):
+async def test_start_without_credentials_stays_up(monkeypatch, tmp_path: Path):
+    # No saved credentials and no password: the process must not crash (a crash
+    # loops the container and hammers the rate-limited login). It comes up
+    # unauthenticated and arms the supervisor to retry.
     monkeypatch.setattr(auth, "load_user_data", lambda _p: None)
     config = make_config(persist=tmp_path, password=None)
     backend = DeviceManagerBackend(config, manager_factory=_factory({"next": dict}))
-    with pytest.raises(AuthError, match="rockville login"):
-        await backend.start()
+    await backend.start()
+    try:
+        assert backend.authenticated is False
+        assert backend._reauth.is_set()
+        assert backend.handle("duid-1") is None
+    finally:
+        await backend.close()
+
+
+async def test_start_login_failure_stays_up(monkeypatch, tmp_path: Path):
+    # A login that fails (e.g. Roborock returns 9002 "too frequent") must leave
+    # the bridge running and retrying, not crash it.
+    monkeypatch.setattr(auth, "load_user_data", lambda _p: None)
+
+    async def failing_login(*_args):
+        # Mirrors how Roborock's 9002 "request too frequency" surfaces as an
+        # AuthError out of auth.password_login.
+        raise AuthError("9002")
+
+    monkeypatch.setattr(auth, "password_login", failing_login)
+    config = make_config(persist=tmp_path, password="secret")
+    backend = DeviceManagerBackend(config, manager_factory=_factory({"next": dict}))
+    await backend.start()
+    try:
+        assert backend.authenticated is False
+        assert backend._reauth.is_set()
+    finally:
+        await backend.close()
+
+
+async def test_start_build_manager_failure_stays_up(monkeypatch, tmp_path: Path):
+    # Valid credentials but the device-manager build fails (e.g. the cloud home
+    # data fetch errors): still no crash, just an unauthenticated retry.
+    monkeypatch.setattr(auth, "load_user_data", lambda _p: sample_user_data())
+
+    async def failing_factory(_params, **_kwargs):
+        raise RoborockException("boom")
+
+    config = make_config(persist=tmp_path)
+    backend = DeviceManagerBackend(config, manager_factory=failing_factory)
+    await backend.start()
+    try:
+        assert backend.authenticated is False
+        assert backend._reauth.is_set()
+    finally:
+        await backend.close()
 
 
 async def test_seed_static_ips(monkeypatch, tmp_path: Path):

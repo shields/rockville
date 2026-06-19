@@ -101,14 +101,31 @@ async def password_login(
     *,
     client_factory: ApiClientFactory = RoborockApiClient,
 ) -> UserData:
-    """Log in unattended with the account password and persist the result."""
+    """Log in unattended with the account password and persist the result.
+
+    The cloud login is required, but persisting the session is best-effort: if
+    the persist directory cannot be written (a read-only or full volume), the
+    failure is logged loudly and the in-memory credentials are returned anyway.
+    Raising instead would discard a *successful* login and crash the bridge,
+    and because the crash restarts the container, every restart would re-run a
+    real login — the exact rate-limit hammer the persisted session exists to
+    avoid. Degrading to "re-login on the next start" is the lesser evil.
+    """
     client = client_factory(email)
     try:
         user_data = await client.pass_login(password)
     except RoborockException as err:
         msg = f"password login failed for {email}: {err}"
         raise AuthError(msg) from err
-    store_user_data(persist, user_data)
+    try:
+        store_user_data(persist, user_data)
+    except OSError as err:
+        _log.error(
+            "logged in but could not persist credentials; "
+            "the next restart will need a fresh login",
+            path=str(user_data_path(persist)),
+            error=str(err),
+        )
     return user_data
 
 

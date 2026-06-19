@@ -52,7 +52,9 @@ behind injected seams, so the bridge is tested without the library or a broker.
   Defines the `Backend`/`VacuumHandle` protocols the bridge depends on;
   `DeviceManagerBackend` owns the account-level `DeviceManager`, seeds static
   IPs, maps library traits → `Telemetry` and `Command` → `RoborockCommand`, and
-  re-authenticates unattended via a background supervisor.
+  re-authenticates unattended via a background supervisor. A failed _initial_
+  login is routed into that same supervisor (with backoff) rather than crashing
+  — see "Resilient startup" below.
 - `bridge.py` — async core: per-device poll loop, MQTT reconnect loop with
   jittered backoff, command routing, metrics, status server.
 - `metrics.py` — `prometheus-client` + aiohttp server (`/metrics`, `/healthz`,
@@ -101,6 +103,21 @@ installed source before relying on them after a library upgrade.
   task, which catches `CancelledError` and publishes retained `offline` from
   inside its own still-open connection before re-raising. `shutdown()` never
   touches `self._client` directly — that would race the loop closing it.
+- **Resilient startup (no auth crashloop)**: `DeviceManagerBackend.start()`
+  catches `AuthError`/`RoborockException` from the initial login + manager build
+  and comes up unauthenticated, arming the supervisor to retry on the capped
+  exponential backoff (5s→300s). Crashing instead would restart the container,
+  and an unattended restart loop re-attempts the login on every boot until
+  Roborock rate-limits the account (code 9002). Because `/healthz` is
+  auth-independent, the liveness probe keeps the pod up while it retries; the
+  first successful login persists `user_data.json`, so later boots skip the
+  login entirely. (A genuine `ConfigError` still exits — it is not retryable.)
+  Persisting is best-effort on its own: a write failure on a read-only or full
+  persist volume is logged loudly but does not crash — `auth.password_login`
+  returns the in-memory credentials and `JsonCache.set` swallows `OSError` (only
+  `OSError`; a serialization `TypeError` still surfaces). Otherwise a successful
+  login whose write fails would crash and re-login on every restart — the same
+  hammer, via a broken volume instead of a missing one.
 - **Last-Will**: `{prefix}/bridge/availability` is the LWT (`offline`,
   retained), set `online` on connect; per-device `…/availability` tracks
   reachability.

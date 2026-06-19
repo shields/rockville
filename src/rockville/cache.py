@@ -66,9 +66,25 @@ class JsonCache(Cache):
         return self._data
 
     async def set(self, value: CacheData) -> None:
-        """Store `value` in memory and write it through to disk."""
+        """Store `value` in memory and write it through to disk.
+
+        The disk write is best-effort: the cache only accelerates startup (a
+        miss re-fetches device info from the cloud), so a write failure on a
+        read-only or full persist volume is logged and swallowed rather than
+        aborting device discovery — which, on the path that runs during login,
+        would otherwise crash the bridge into a login-retry loop. A
+        serialization error (`TypeError`) still propagates: that is a
+        programming bug, not an environmental one.
+        """
         self._data = value
-        await asyncio.to_thread(self._store, value)
+        try:
+            await asyncio.to_thread(self._store, value)
+        except OSError as err:
+            _log.warning(
+                "could not persist device cache; continuing without it",
+                path=str(self._path),
+                error=str(err),
+            )
 
     def _load(self) -> CacheData:
         if not self._path.exists():

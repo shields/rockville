@@ -196,13 +196,31 @@ class DeviceManagerBackend:
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
-        user_data = await self._resolve_user_data()
         await self._seed_static_ips()
-        await self._build_manager(user_data)
-        self._authenticated = True
+        # A failed initial authentication must not crash the process. A crash
+        # restarts the container, and an unattended restart loop re-attempts the
+        # login on every boot until Roborock rate-limits the account (code 9002).
+        # Instead, come up unauthenticated and let the supervisor retry on the
+        # same exponential backoff it uses for an expired session: login attempts
+        # stay spaced out, and the bridge keeps serving health and metrics while
+        # publishing the devices as offline until a login succeeds.
+        try:
+            user_data = await self._resolve_user_data()
+            await self._build_manager(user_data)
+        except (AuthError, RoborockException) as err:
+            _log.warning(
+                "initial roborock authentication failed; retrying in background",
+                error=str(err),
+            )
+            self._authenticated = False
+        else:
+            self._authenticated = True
         # Clear any stale signal a previously cancelled supervisor may have left
-        # set, so the new supervisor does not immediately re-authenticate.
+        # set; then arm the supervisor to retry immediately if we did not come up
+        # authenticated.
         self._reauth.clear()
+        if not self._authenticated:
+            self._reauth.set()
         self._supervisor = asyncio.create_task(self._supervise())
 
     async def close(self) -> None:

@@ -137,6 +137,25 @@ async def test_password_login_failure_raises_auth_error(tmp_path: Path):
         )
 
 
+async def test_password_login_tolerates_store_failure(tmp_path: Path, monkeypatch):
+    # A successful login whose credential write fails (read-only/full persist
+    # volume) must still return the in-memory credentials rather than raising:
+    # discarding a successful login and crashing would re-run login on every
+    # restart — the rate-limit hammer the persisted session exists to avoid.
+    def boom(*_args, **_kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(auth, "store_user_data", boom)
+    result = await auth.password_login(
+        "me@example.com",
+        "secret",
+        tmp_path,
+        client_factory=lambda _email: FakeApiClient(user_data=sample_user_data()),
+    )
+    assert result.rriot.u == "u"
+    assert not auth.user_data_path(tmp_path).exists()
+
+
 async def test_code_login_success(tmp_path: Path):
     user_data = sample_user_data()
     result = await auth.code_login(
