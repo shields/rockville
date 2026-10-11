@@ -3,7 +3,7 @@ name = "rockville"
 version = "0.0.0"
 description = "Local-first Roborock-to-MQTT bridge for the Roborock Q5 Max+"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 license = "Apache-2.0"
 authors = [{ name = "Michael Shields" }]
 dependencies = [

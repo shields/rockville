@@ -28,7 +28,7 @@ from needing the cloud to find the vacuum.
 
 ## Requirements
 
-- Python 3.14, managed with [uv](https://docs.astral.sh/uv/).
+- Python 3.15, managed with [uv](https://docs.astral.sh/uv/).
 - A Roborock cloud account and a V1-protocol vacuum (e.g. the Q5 Max+).
 - Your own MQTT broker (e.g. Mosquitto).
 

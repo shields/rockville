@@ -11,7 +11,7 @@ generic topics, and dispatches control commands back to the vacuum. Modeled on
 
 ## Toolchain
 
-- **Python 3.14**, managed with **uv** (`uv sync`, `uv.lock`).
+- **Python 3.15**, managed with **uv** (`uv sync`, `uv.lock`).
 - **Ruff** for lint + format (`.ruff.toml`, `select = ["ALL"]`).
 - **ty** for type checking — run against `src` only (`ty check src`); the tests
   use loose test doubles that intentionally don't satisfy the strict protocols.

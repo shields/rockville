@@ -22,7 +22,7 @@ ENV UV_PYTHON_INSTALL_DIR=/python \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 WORKDIR /app
-RUN uv python install 3.14
+RUN uv python install 3.15
 # Install dependencies first (without the project) so this layer is cached
 # across source changes.
 COPY pyproject.toml uv.lock ./
