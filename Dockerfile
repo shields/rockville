@@ -16,7 +16,7 @@
 # copied onto a distroless runtime. cc-debian13 provides glibc and libstdc++,
 # which the native wheels (pycryptodome, aiohttp, paho-mqtt) need. Digests pin
 # the exact images and are kept current by Renovate.
-FROM ghcr.io/astral-sh/uv:trixie-slim@sha256:2a4b12b30aa1a0f1d1f420ad3f4ac27716d5c2962302ac8a7af67ac3287bf36c AS build
+FROM ghcr.io/astral-sh/uv:trixie-slim@sha256:2d5298090a57b670458ccae215742352f753f3d583db23f3cd35081d26859ada AS build
 ENV UV_PYTHON_INSTALL_DIR=/python \
     UV_PYTHON_PREFERENCE=only-managed \
     UV_COMPILE_BYTECODE=1 \
