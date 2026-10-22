@@ -16,7 +16,7 @@
     },
     {
       description: "Automerge dev dependencies",
-      matchDepTypes: ["dev"],
+      matchDepTypes: ["dependency-groups"],
       automerge: true,
     },
   ],
