@@ -20,7 +20,7 @@ IMAGE ?= rockville:dev
 
 .PHONY: lint fmt test run image
 
-lint:
+lint: actions-lock-verify-local
 	uv run ruff format --check .
 	uv run ruff check .
 	uv run ty check src
@@ -40,3 +40,17 @@ run:
 
 image:
 	docker build -t $(IMAGE) .
+
+.PHONY: actions-lock-install actions-lock actions-lock-verify-local actions-lock-verify
+
+actions-lock-install:
+	gh extension install github/gh-actions-lock --pin v0.4.1 --force
+
+actions-lock:
+	gh actions-lock --no-interactive
+
+actions-lock-verify-local:
+	gh actions-lock --verify-local
+
+actions-lock-verify:
+	gh actions-lock --verify
