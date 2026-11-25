@@ -31,7 +31,7 @@ COPY README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:532c7a94f9e96ba9db75eb9388f4227751131c7cb0a411d1a8521af4096135de
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2
 ARG GIT_VERSION=unknown
 ENV ROCKVILLE_VERSION=${GIT_VERSION} \
     CONFIG_PATH=/config/config.yaml \
