@@ -16,6 +16,7 @@
 
 import asyncio
 import ssl
+from dataclasses import replace
 
 from aiomqtt import MqttError
 from fakes import (
@@ -84,6 +85,14 @@ async def test_on_message_dispatches_start_command():
     )
 
 
+async def test_pause_does_not_wake_poll() -> None:
+    handle = FakeHandle()
+    bridge, _ = build_bridge(handle=handle)
+    await bridge._on_message(FakeMessage("rockville/vac/command/set", b"pause"))
+    assert handle.commands == [Command.PAUSE]
+    assert not bridge._refresh["vac"].is_set()
+
+
 async def test_on_message_dispatches_fan_speed():
     handle = FakeHandle()
     bridge, _ = build_bridge(handle=handle)
@@ -120,6 +129,8 @@ async def test_on_message_command_error_is_logged():
     handle = FakeHandle(execute_error=RoborockException("boom"))
     bridge, _ = build_bridge(handle=handle)
     await bridge._on_message(FakeMessage("rockville/vac/command/set", b"start"))
+
+    assert not bridge._refresh["vac"].is_set()
 
 
 async def test_on_message_unknown_fan_speed_warns():
@@ -341,9 +352,8 @@ def test_status_absent_device():
 async def test_poll_loop_one_iteration_publishes():
     handle = FakeHandle()
     bridge, _ = build_bridge(handle=handle, sleep=None)
-    bridge._sleep = _stop_after_first(bridge)
     bridge._client = FakeMQTTClient()
-    await bridge._poll_loop(device_of(bridge))
+    await bridge._poll_once(device_of(bridge))
     assert handle.refresh_count == 1
     assert (
         bridge.registry.get_sample_value(
@@ -356,9 +366,8 @@ async def test_poll_loop_one_iteration_publishes():
 async def test_poll_loop_handles_refresh_error():
     handle = FakeHandle(refresh_error=RoborockException("nope"))
     bridge, _ = build_bridge(handle=handle)
-    bridge._sleep = _stop_after_first(bridge)
     bridge._client = FakeMQTTClient()
-    await bridge._poll_loop(device_of(bridge))
+    await bridge._poll_once(device_of(bridge))
     assert (
         bridge.registry.get_sample_value(
             "rockville_poll_errors_total", {"device": "vac"}
@@ -369,10 +378,73 @@ async def test_poll_loop_handles_refresh_error():
 
 async def test_poll_loop_absent_handle():
     bridge, _ = build_bridge(handle=None)
-    bridge._sleep = _stop_after_first(bridge)
     bridge._client = FakeMQTTClient()
-    await bridge._poll_loop(device_of(bridge))
+    await bridge._poll_once(device_of(bridge))
     assert bridge._state["vac"]["connection"] == "offline"
+
+
+async def test_start_wakes_sleeping_poll_and_return_during_poll_runs_followup() -> None:
+    handle = FakeHandle()
+    bridge, backend = build_bridge(handle=handle)
+    observed: asyncio.Queue[int] = asyncio.Queue()
+    release = asyncio.Event()
+
+    async def refresh() -> Telemetry:
+        handle.refresh_count += 1
+        count = handle.refresh_count
+        observed.put_nowait(count)
+        if count >= 2:
+            await release.wait()
+        return Telemetry(state=str(count))
+
+    handle.refresh = refresh
+    task = asyncio.create_task(bridge._poll_loop(device_of(bridge)))
+    bridge._tasks.append(task)
+    try:
+        async with asyncio.timeout(2):
+            assert await observed.get() == 1
+            assert bridge._state["vac"]["state"] == "1"
+            await bridge._on_message(FakeMessage("rockville/vac/command/set", b"start"))
+            assert await observed.get() == 2
+            await bridge._on_message(
+                FakeMessage("rockville/vac/command/set", b"return")
+            )
+            assert observed.empty()
+            release.set()
+            assert await observed.get() == 3
+            assert bridge._state["vac"]["state"] == "3"
+            release.clear()
+            await bridge._on_message(FakeMessage("rockville/vac/command/set", b"start"))
+            assert await observed.get() == 4
+            await bridge._on_message(
+                FakeMessage("rockville/vac/command/set", b"return")
+            )
+    finally:
+        await bridge.shutdown()
+    assert task.cancelled()
+    assert handle.refresh_count == 4
+    assert backend.closed
+
+
+async def test_poll_interval_refreshes_without_a_command() -> None:
+    handle = FakeHandle()
+    bridge, _ = build_bridge(handle=handle)
+    bridge._config = replace(bridge._config, poll_interval=0.001)
+    repeated = asyncio.Event()
+
+    async def refresh() -> Telemetry:
+        handle.refresh_count += 1
+        if handle.refresh_count == 2:
+            repeated.set()
+        return SAMPLE_TELEMETRY
+
+    handle.refresh = refresh
+    bridge._tasks.append(asyncio.create_task(bridge._poll_loop(device_of(bridge))))
+    try:
+        async with asyncio.timeout(2):
+            await repeated.wait()
+    finally:
+        await bridge.shutdown()
 
 
 # --- mqtt loop -------------------------------------------------------------

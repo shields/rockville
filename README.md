@@ -126,6 +126,11 @@ command topics are not.
 | `…/command/set`   | `start` `stop` `pause` `return` `locate` | Control the vacuum. |
 | `…/fan_speed/set` | a fan-speed name (e.g. `balanced`)       | Set the fan speed.  |
 
+After a successful `start` or `return`, rockville polls that vacuum immediately.
+If a poll is in progress, another follows it. Periodic polling continues and
+only changed values are published, so a robot that takes time to change state
+reports the change on a later poll.
+
 Try it with the Mosquitto clients:
 
 ```sh

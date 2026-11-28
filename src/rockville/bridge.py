@@ -30,6 +30,7 @@ import random
 import ssl
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import aiomqtt
@@ -37,6 +38,7 @@ from prometheus_client import CollectorRegistry
 from roborock.exceptions import RoborockException
 
 from . import convert
+from .domain import Command
 from .log import get_logger
 from .metrics import StatusServer, create_metrics
 from .status_page import DeviceStatus, StatusData
@@ -101,6 +103,7 @@ class Bridge:
         self._stopping = False
         self._tasks: list[asyncio.Task[None]] = []
         self._bridge_availability = f"{config.mqtt.topic_prefix}/bridge/availability"
+        self._refresh = {d.name: asyncio.Event() for d in config.devices}
         self._command_topics: dict[str, tuple[DeviceConfig, str]] = {}
         for device in config.devices:
             self._command_topics[self._topic(device.name, "command/set")] = (
@@ -264,6 +267,9 @@ class Bridge:
                 command=command.value,
                 error=str(err),
             )
+        else:
+            if command in {Command.START, Command.RETURN}:
+                self._refresh[device.name].set()
 
     async def _dispatch_fan_speed(
         self, device: DeviceConfig, handle: VacuumHandle, text: str
@@ -277,21 +283,26 @@ class Bridge:
             _log.warning("ignoring unknown fan speed", device=device.name, payload=text)
 
     async def _poll_loop(self, device: DeviceConfig) -> None:
-        while not self._stopping:
-            handle = self._backend.handle(device.duid)
-            if handle is not None:
-                try:
-                    telemetry = await handle.refresh()
-                except RoborockException as err:
-                    self._metrics.poll_errors.labels(device=device.name).inc()
-                    _log.warning("poll failed", device=device.name, error=str(err))
-                else:
-                    await self._update_state(device, telemetry)
-                    self._metrics.last_poll.labels(device=device.name).set(
-                        self._clock()
-                    )
-            await self._update_connection(device)
-            await self._sleep(self._config.poll_interval)
+        refresh = self._refresh[device.name]
+        while True:
+            refresh.clear()
+            await self._poll_once(device)
+            with suppress(TimeoutError):
+                async with asyncio.timeout(self._config.poll_interval):
+                    await refresh.wait()
+
+    async def _poll_once(self, device: DeviceConfig) -> None:
+        handle = self._backend.handle(device.duid)
+        if handle is not None:
+            try:
+                telemetry = await handle.refresh()
+            except RoborockException as err:
+                self._metrics.poll_errors.labels(device=device.name).inc()
+                _log.warning("poll failed", device=device.name, error=str(err))
+            else:
+                await self._update_state(device, telemetry)
+                self._metrics.last_poll.labels(device=device.name).set(self._clock())
+        await self._update_connection(device)
 
     async def _update_state(self, device: DeviceConfig, telemetry: Telemetry) -> None:
         changed = False
